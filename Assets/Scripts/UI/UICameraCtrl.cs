@@ -11,6 +11,7 @@ using Unity.XR.PICO.TOBSupport;
 using UnityEngine;
 using UnityEngine.UI;
 using XRoboToolkit.Network;
+using XRoboToolkit.ReceiverHeartbeat;
 
 public partial class UICameraCtrl : MonoBehaviour
 {
@@ -35,6 +36,8 @@ public partial class UICameraCtrl : MonoBehaviour
 
     public TcpManager tcpManager;
     private string logTag => "UICameraCtrl";
+    private Coroutine _cameraRequestCoroutine;
+    private RemoteCameraWindow _remoteCameraWindow;
 
     private int streamingPort = 12345;
 
@@ -56,6 +59,14 @@ public partial class UICameraCtrl : MonoBehaviour
         // Bind event
         tcpManager.OnServerReceived += OnServerReceived;
         tcpManager.OnClientReceived += OnClientReceived;
+
+        _remoteCameraWindow = RemoteCameraWindowObj == null
+            ? null
+            : RemoteCameraWindowObj.GetComponent<RemoteCameraWindow>();
+        if (_remoteCameraWindow != null)
+        {
+            _remoteCameraWindow.CloseRequested += OnRemoteCameraCloseRequested;
+        }
     }
 
     private void OnServerReceived(byte[] data)
@@ -138,7 +149,7 @@ public partial class UICameraCtrl : MonoBehaviour
         }
         else
         {
-            RemoteCameraWindowObj.SetActive(false);
+            StopCameraStream(true);
         }
 
         // Update button
@@ -147,26 +158,56 @@ public partial class UICameraCtrl : MonoBehaviour
 
     public void RequestCameraStream(string ip)
     {
-        StartCoroutine(RequestCameraStreamCoroutine(ip));
+        StopCameraStream(true);
+        _cameraRequestCoroutine = StartCoroutine(RequestCameraStreamCoroutine(ip));
     }
 
     IEnumerator RequestCameraStreamCoroutine(string ip)
     {
+        string sourceIp = (ip ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(sourceIp))
+        {
+            FailCameraRequest("Camera sender IP is required.");
+            yield break;
+        }
+
         if (TcpServer.Status == ServerStatus.Started)
         {
             // Close TcpServer first
-            TcpManager.Instance.StopServer();
+            if (TcpManager.Instance != null) TcpManager.Instance.StopServer();
         }
 
         yield return new WaitForSeconds(0.1f);
 
         // Get camera parameters
-        var camPara = VideoSourceConfigManager.Instance.CameraParameters;
+        VideoSourceConfigManager config = VideoSourceConfigManager.Instance;
+        var camPara = config.CameraParameters;
+        string heartbeatHost = string.IsNullOrWhiteSpace(config.ReceiverHeartbeatHost)
+            ? sourceIp
+            : config.ReceiverHeartbeatHost.Trim();
+        var heartbeatSettings = new ReceiverHeartbeatSettings
+        {
+            Enabled = config.ReceiverHeartbeatEnabled,
+            DestinationHost = heartbeatHost,
+            DestinationPort = config.ReceiverHeartbeatPort,
+            PublishHz = config.ReceiverHeartbeatHz,
+            HeartbeatTimeoutMs = config.ReceiverHeartbeatTimeoutMs,
+            FrameStaleMs = config.ReceiverFrameStaleMs,
+            VisualDependent = config.VisualDependentProfile,
+            VisualProfile = config.VisualProfile,
+            SourceName = config.CurrentVideoSource?.name ?? string.Empty
+        };
+        if (!heartbeatSettings.TryValidate(out string heartbeatError))
+        {
+            FailCameraRequest(heartbeatError);
+            yield break;
+        }
 
         // Start listening to the camera
         RemoteCameraWindowObj.SetActive(true);
-        RemoteCameraWindowObj.GetComponent<RemoteCameraWindow>().StartListen(camPara.width, camPara.height, camPara.fps,
-            camPara.bitrate, streamingPort);
+        _remoteCameraWindow = RemoteCameraWindowObj.GetComponent<RemoteCameraWindow>();
+        _remoteCameraWindow.StartListen(camPara.width, camPara.height, camPara.fps,
+            camPara.bitrate, streamingPort, config.FollowHead, config.UsePcServiceControl, heartbeatSettings);
 
         yield return new WaitForSeconds(0.2f);
 
@@ -175,15 +216,45 @@ public partial class UICameraCtrl : MonoBehaviour
 
         yield return new WaitForSeconds(0.1f);
 
-        if (TcpClient.Status != ClientStatus.Connected)
+        if (TcpClient.Status == ClientStatus.Connected || TcpClient.Status == ClientStatus.Connecting)
         {
-            // initialize TcpClient, server IP is the video source IP
-            TcpManager.Instance.StartClient(ip);
+            if (TcpManager.Instance != null) TcpManager.Instance.StopClient();
+            yield return new WaitForSecondsRealtime(0.1f);
         }
 
-        yield return new WaitForSeconds(0.5f);
+        if (TcpManager.Instance == null)
+        {
+            FailCameraRequest("Camera control manager is unavailable.");
+            yield break;
+        }
 
-        var localIP = Utils.GetLocalIPv4();
+        try
+        {
+            TcpManager.Instance.StartClient(sourceIp);
+        }
+        catch (Exception exception)
+        {
+            FailCameraRequest("Failed to start camera control connection: " + exception.Message);
+            yield break;
+        }
+
+        float connectionDeadline = Time.realtimeSinceStartup + 5f;
+        while (TcpClient.Status == ClientStatus.Connecting && Time.realtimeSinceStartup < connectionDeadline)
+        {
+            yield return null;
+        }
+        if (TcpClient.Status != ClientStatus.Connected)
+        {
+            FailCameraRequest("Camera control connection timed out or failed.");
+            yield break;
+        }
+
+        string localIP = TcpClient.LocalAddress;
+        if (string.IsNullOrWhiteSpace(localIP))
+        {
+            FailCameraRequest("Camera control socket did not expose a local IPv4 address.");
+            yield break;
+        }
 
         // Send request to the server
         var customConfig = CameraRequestSerializer.FromCameraParameters(
@@ -200,7 +271,74 @@ public partial class UICameraCtrl : MonoBehaviour
         var data = CameraRequestSerializer.Serialize(customConfig);
 
         // Use network commander
-        NetworkCommander.Instance.OpenCamera(data);
+        if (NetworkCommander.Instance == null)
+        {
+            FailCameraRequest("Camera network commander is unavailable.");
+            yield break;
+        }
+        try
+        {
+            NetworkCommander.Instance.OpenCamera(data);
+        }
+        catch (Exception exception)
+        {
+            FailCameraRequest("Failed to send camera open command: " + exception.Message);
+            yield break;
+        }
+        _cameraRequestCoroutine = null;
+    }
+
+    private void FailCameraRequest(string message)
+    {
+        Debug.LogError(message);
+        LogWindow.Error(message);
+        Toast.Show(message);
+        _cameraRequestCoroutine = null;
+        listenBtn.SetOn(false);
+        if (RemoteCameraWindowObj != null)
+        {
+            RemoteCameraWindowObj.SetActive(false);
+        }
+        if (TcpClient.Status == ClientStatus.Connected || TcpClient.Status == ClientStatus.Connecting)
+        {
+            if (TcpManager.Instance != null) TcpManager.Instance.StopClient();
+        }
+    }
+
+    private void StopCameraStream(bool sendCloseCommand)
+    {
+        if (_cameraRequestCoroutine != null)
+        {
+            StopCoroutine(_cameraRequestCoroutine);
+            _cameraRequestCoroutine = null;
+        }
+
+        if (sendCloseCommand && TcpClient.Status == ClientStatus.Connected && NetworkCommander.Instance != null)
+        {
+            try
+            {
+                NetworkCommander.Instance.CloseCamera();
+            }
+            catch (Exception exception)
+            {
+                Debug.LogWarning("Failed to send camera close command: " + exception.Message);
+            }
+        }
+
+        if (RemoteCameraWindowObj != null)
+        {
+            RemoteCameraWindowObj.SetActive(false);
+        }
+        if (TcpClient.Status == ClientStatus.Connected || TcpClient.Status == ClientStatus.Connecting)
+        {
+            if (TcpManager.Instance != null) TcpManager.Instance.StopClient();
+        }
+    }
+
+    private void OnRemoteCameraCloseRequested()
+    {
+        StopCameraStream(false);
+        listenBtn?.SetOn(false);
     }
 
     private void OnCameraStateChanged(int state)
@@ -211,8 +349,16 @@ public partial class UICameraCtrl : MonoBehaviour
 
     private void OnDestroy()
     {
+        StopCameraStream(false);
         TcpHandler.ReceiveFunctionEvent -= OnNetReceive;
         CameraHandle.RemoveStateListener(OnCameraStateChanged);
+        listenBtn.OnChange -= OnListenCameraBtn;
+        tcpManager.OnServerReceived -= OnServerReceived;
+        tcpManager.OnClientReceived -= OnClientReceived;
+        if (_remoteCameraWindow != null)
+        {
+            _remoteCameraWindow.CloseRequested -= OnRemoteCameraCloseRequested;
+        }
     }
 
     private void OnRecordBtn(bool on)

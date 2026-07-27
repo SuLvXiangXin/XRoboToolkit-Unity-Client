@@ -58,7 +58,8 @@ namespace Robot.Conf
 
             // Update SetLERE component
             setLere.UpdateParameters(videoSourceConfigManager.VisibleRatio,
-                videoSourceConfigManager.ContentRatio, videoSourceConfigManager.HeightCompressionFactor);
+                videoSourceConfigManager.ContentRatio, videoSourceConfigManager.HeightCompressionFactor,
+                videoSourceConfigManager.UseStereoSideBySide);
 
             // log shader properties for debugging
             Debug.Log($"Shader Properties - Visible Ratio: {videoSourceConfigManager.VisibleRatio}, " +

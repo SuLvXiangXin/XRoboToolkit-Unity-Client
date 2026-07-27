@@ -1,4 +1,7 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
+using Robot;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -27,9 +30,20 @@ public class CameraSendInputDialog : MonoBehaviour
 
     public void Show(Action<string> onConfirmCall)
     {
-        TmpInput.text = PlayerPrefs.GetString("CameraSendInputDialog", "");
+        string poseIp = TcpHandler.GetTargetIP;
+        TmpInput.text = IsUsablePoseIp(poseIp)
+            ? poseIp
+            : PlayerPrefs.GetString("CameraSendInputDialog", "");
         OnConfirmCall = onConfirmCall;
         gameObject.SetActive(true);
+    }
+
+    private static bool IsUsablePoseIp(string value)
+    {
+        return IPAddress.TryParse(value, out IPAddress address) &&
+               address.AddressFamily == AddressFamily.InterNetwork &&
+               !IPAddress.IsLoopback(address) &&
+               !address.Equals(IPAddress.Any);
     }
 
     private void OnConfirmBtn()

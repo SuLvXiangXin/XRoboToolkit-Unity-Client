@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -5,6 +6,8 @@ using UnityEngine;
 public class MediaDecoder
 {
     private static AndroidJavaObject _javaObj = null;
+    private static AndroidJavaClass _javaSystemClass;
+    private static IntPtr _lastTimestampFieldId = IntPtr.Zero;
 
     private static AndroidJavaObject GetJavaObject()
     {
@@ -42,5 +45,49 @@ public class MediaDecoder
     {
         LogWindow.Info("Releasing MediaDecoder resources");
         GetJavaObject().Call("release");
+    }
+
+    /// <summary>
+    /// Returns the age of the last compressed frame accepted into MediaCodec.
+    /// The bundled AAR does not expose raw socket receive timestamps, so this is
+    /// deliberately reported as a decoder-input observation by the heartbeat.
+    /// </summary>
+    public static bool TryGetLastDecoderInputAgeMs(out long ageMs)
+    {
+        ageMs = -1;
+#if UNITY_ANDROID && !UNITY_EDITOR
+        try
+        {
+            AndroidJavaObject decoder = GetJavaObject();
+            if (_lastTimestampFieldId == IntPtr.Zero)
+            {
+                _lastTimestampFieldId = AndroidJNI.GetFieldID(
+                    decoder.GetRawClass(), "lastTimestamp", "J");
+            }
+
+            long lastTimestampUs = AndroidJNI.GetLongField(
+                decoder.GetRawObject(), _lastTimestampFieldId);
+            if (lastTimestampUs <= 0)
+            {
+                return false;
+            }
+
+            if (_javaSystemClass == null)
+            {
+                _javaSystemClass = new AndroidJavaClass("java.lang.System");
+            }
+
+            long nowUs = _javaSystemClass.CallStatic<long>("nanoTime") / 1000L;
+            ageMs = Math.Max(0L, (nowUs - lastTimestampUs) / 1000L);
+            return true;
+        }
+        catch
+        {
+            ageMs = -1;
+            return false;
+        }
+#else
+        return false;
+#endif
     }
 }

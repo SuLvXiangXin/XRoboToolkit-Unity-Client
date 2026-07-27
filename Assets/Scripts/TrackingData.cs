@@ -165,6 +165,8 @@ namespace Robot
             int ret = PXR_MotionTracking.GetMotionTrackerConnectStateWithSN(ref mtcs);
 
             int len = 0;
+            int trackerSum = Mathf.Max(0, mtcs.trackerSum);
+            int snCapacity = mtcs.trackersSN == null ? 0 : mtcs.trackersSN.Length;
             JsonData joints;
             if (_motionTrackingJson.ContainsKey("joints"))
             {
@@ -180,11 +182,14 @@ namespace Robot
 
             if (ret == 0)
             {
-                if (mtcs.trackersSN.Length > 0)
+                if (snCapacity > 0)
                 {
-                    for (int i = 0; i < mtcs.trackerSum; i++)
+                    int count = Mathf.Min(trackerSum, snCapacity);
+                    for (int i = 0; i < count; i++)
                     {
-                        string sn = mtcs.trackersSN[i].value.ToString().Trim();
+                        string sn = string.IsNullOrEmpty(mtcs.trackersSN[i].value)
+                            ? string.Empty
+                            : mtcs.trackersSN[i].value.Trim();
                         if (!string.IsNullOrEmpty(sn))
                         {
                             //Obtain estimated position and rotation values for each somatosensory tracker
@@ -260,7 +265,7 @@ namespace Robot
             if (trackingData.roleDatas != null)
             {
                 int len = trackingData.roleDatas.Length;
-                _motionTrackingJson["len"] = len;
+                _bodyTrackingJson["len"] = len;
 
                 for (int i = 0; i < len; i++)
                 {

@@ -19,13 +19,20 @@ public class SetLERE : MonoBehaviour
     private float visibleRatio = 0.555f;
     private float contentRatio = 1.8f;
     private float heightCompressionFactor = 1.333333f; // 4:3 aspect ratio
+    private bool stereoSideBySide = true;
 
     public void UpdateParameters(float visible, float content, float heightCompression)
+    {
+        UpdateParameters(visible, content, heightCompression, true);
+    }
+
+    public void UpdateParameters(float visible, float content, float heightCompression, bool useStereoSideBySide)
     {
         // Adjust the ratios based on the height compression factor
         visibleRatio = visible;
         contentRatio = content;
         heightCompressionFactor = heightCompression;
+        stereoSideBySide = useStereoSideBySide;
 
         // Log the updated values
         Debug.Log($"Updated Ratios - visible: {visibleRatio}, content: {contentRatio}, heightCompression: {heightCompressionFactor}");
@@ -39,6 +46,13 @@ public class SetLERE : MonoBehaviour
 
     void Update()
     {
+        if (!stereoSideBySide)
+        {
+            if (CanvLE.activeSelf) CanvLE.SetActive(false);
+            if (CanvRE.activeSelf) CanvRE.SetActive(false);
+            return;
+        }
+
         if ((!CanvLE.activeSelf) || (!CanvRE.activeSelf))
         {
             CanvLE.SetActive(true);

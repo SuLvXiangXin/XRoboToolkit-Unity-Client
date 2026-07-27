@@ -1,0 +1,21 @@
+{
+  "name": "XRoboToolkit.ReceiverHeartbeat.Tests",
+  "rootNamespace": "XRoboToolkit.ReceiverHeartbeat.Tests",
+  "references": [
+    "XRoboToolkit.ReceiverHeartbeat"
+  ],
+  "optionalUnityReferences": [
+    "TestAssemblies"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": true
+}

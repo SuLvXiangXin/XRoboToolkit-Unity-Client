@@ -90,7 +90,14 @@ public class UIOperate : MonoBehaviour
         // Update videoSourceDropdown options
         print("OnSourceConfigOnOnInitialized");
         videoSourceDropdown.ClearOptions();
-        videoSourceDropdown.AddOptions(sourceConfig.GetVideoSourceNames());
+        List<string> sourceNames = sourceConfig.GetVideoSourceNames();
+        videoSourceDropdown.AddOptions(sourceNames);
+        int selectedIndex = sourceNames.IndexOf(sourceConfig.CurrentVideoSource?.name);
+        if (selectedIndex >= 0)
+        {
+            videoSourceDropdown.SetValueWithoutNotify(selectedIndex);
+            videoSourceDropdown.RefreshShownValue();
+        }
     }
 
     private void OnAndroidCallBack(string key, string value)

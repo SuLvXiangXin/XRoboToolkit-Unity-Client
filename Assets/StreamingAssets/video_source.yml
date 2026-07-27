@@ -1,4 +1,5 @@
-﻿# Video Stream Source Configuration
+﻿# xrobo_config_version: 3
+# Video Stream Source Configuration
 - name: "PICO4U"
   camera: "VR"
   description: "PICO4U Video Stream Source"
@@ -72,3 +73,84 @@
       type: "int"
       description: "Bitrate of the video stream in bps"
       value: 4000000
+
+- name: "CAMERA_ONLY"
+  camera: "ZED"
+  description: "Minimal direct camera receiver with flat head-follow display"
+  properties:
+    - name: "visibleRatio"
+      type: "float"
+      description: "Unused by the flat mono display"
+      value: 1.0
+    - name: "contentRatio"
+      type: "float"
+      description: "Unused by the flat mono display"
+      value: 1.0
+    - name: "heightCompressionFactor"
+      type: "float"
+      description: "Unused by the flat mono display"
+      value: 1.0
+    - name: "RawImageRectSize"
+      type: "string"
+      description: "Flat display size"
+      value: "600x337.5"
+    - name: "CamWidth"
+      type: "int"
+      description: "Insight9 stream width after aspect-preserving scaling"
+      value: 408
+    - name: "CamHeight"
+      type: "int"
+      description: "Maximum Insight9 stream height"
+      value: 720
+    - name: "CamFPS"
+      type: "int"
+      description: "Initial camera-only stream FPS"
+      value: 30
+    - name: "CamBitrate"
+      type: "int"
+      description: "Initial camera-only stream bitrate"
+      value: 4000000
+    - name: "UseStereoSideBySide"
+      type: "bool"
+      description: "Render one flat mono image instead of the SBS eye canvases"
+      value: false
+    - name: "FollowHead"
+      type: "bool"
+      description: "Keep the flat display at a fixed pose relative to the headset"
+      value: true
+    - name: "UsePcServiceControl"
+      type: "bool"
+      description: "Camera-only direct transport must not use PC Service"
+      value: false
+    - name: "ReceiverHeartbeatEnabled"
+      type: "bool"
+      description: "Enable the independent UDP receiver heartbeat"
+      value: true
+    - name: "ReceiverHeartbeatHost"
+      type: "string"
+      description: "Destination IPv4; empty uses the entered camera sender IP"
+      value: ""
+    - name: "ReceiverHeartbeatPort"
+      type: "int"
+      description: "Destination UDP heartbeat port"
+      value: 13580
+    - name: "ReceiverHeartbeatHz"
+      type: "float"
+      description: "Low-frequency receiver heartbeat rate"
+      value: 2.0
+    - name: "ReceiverHeartbeatTimeoutMs"
+      type: "int"
+      description: "Consumer freshness timeout; older means profile unavailable"
+      value: 2000
+    - name: "ReceiverFrameStaleMs"
+      type: "int"
+      description: "Maximum texture-update age for visual availability"
+      value: 1000
+    - name: "VisualDependentProfile"
+      type: "bool"
+      description: "Observation-only by default; enable only with an external supervisor and device safety review"
+      value: false
+    - name: "VisualProfile"
+      type: "string"
+      description: "Visual-dependent profile identifier"
+      value: "camera_flat_head_follow_v1"

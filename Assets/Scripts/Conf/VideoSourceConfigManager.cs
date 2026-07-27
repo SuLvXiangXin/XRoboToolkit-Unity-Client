@@ -5,9 +5,13 @@ using System.IO;
 using System.Linq;
 using UnityEngine;
 using UnityEngine.Networking;
+using XRoboToolkit.ReceiverHeartbeat;
 
 public class VideoSourceConfigManager : MonoBehaviour
 {
+    private const int BundledConfigurationVersion = 3;
+    private const string ConfigurationVersionPrefix = "# xrobo_config_version:";
+
     [Header("Configuration")] [SerializeField]
     private string yamlFileName = "video_source.yml";
 
@@ -39,6 +43,7 @@ public class VideoSourceConfigManager : MonoBehaviour
     {
         LogWindow.Info($"Loading video sources from {path}");
         videoSources = new Dictionary<string, VideoSource>();
+        _currentVideoSource = null;
         // Parse the YAML file
         var parsedVideoSources = VideoSourceYamlParser.ParseYamlFile(path);
 
@@ -86,10 +91,11 @@ public class VideoSourceConfigManager : MonoBehaviour
                 Debug.Log($"Please ensure video_source.yml exists in Assets/StreamingAssets/");
             }
 #else
-            // In build, check persistentDataPath first, then copy from Resources if needed
+            // Refresh an older persistent copy after APK upgrades. A backup is
+            // retained before the bundled v2+ configuration replaces it.
             yamlPath = Path.Combine(Application.persistentDataPath, yamlFileName);
 
-            if (File.Exists(yamlPath))
+            if (File.Exists(yamlPath) && GetConfigurationVersion(yamlPath) >= BundledConfigurationVersion)
             {
                 LoadConfiguration(yamlPath);
                 Debug.Log($"Load video_source.yml from {yamlPath}");
@@ -128,6 +134,25 @@ public class VideoSourceConfigManager : MonoBehaviour
         }
     }
 
+    private static int GetConfigurationVersion(string path)
+    {
+        try
+        {
+            foreach (string line in File.ReadLines(path).Take(8))
+            {
+                string normalized = line.Trim().TrimStart('\uFEFF');
+                if (!normalized.StartsWith(ConfigurationVersionPrefix, StringComparison.Ordinal)) continue;
+                string value = normalized.Substring(ConfigurationVersionPrefix.Length).Trim();
+                return int.TryParse(value, out int version) ? version : 0;
+            }
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+        return 0;
+    }
+
     /// <summary>
     /// Coroutine to load YAML file from StreamingAssets on Android
     /// </summary>
@@ -149,6 +174,14 @@ public class VideoSourceConfigManager : MonoBehaviour
                         Directory.CreateDirectory(directory);
                     }
 
+                    if (File.Exists(targetPath) &&
+                        GetConfigurationVersion(targetPath) < BundledConfigurationVersion)
+                    {
+                        string backupPath = targetPath + ".pre-v" + BundledConfigurationVersion + ".bak";
+                        File.Copy(targetPath, backupPath, true);
+                        Debug.Log($"Backed up legacy video source config to {backupPath}");
+                    }
+
                     // Write the content to the target path
                     File.WriteAllText(targetPath, www.downloadHandler.text);
                     Debug.Log($"Successfully copied video_source.yml from StreamingAssets to {targetPath}");
@@ -163,7 +196,12 @@ public class VideoSourceConfigManager : MonoBehaviour
             }
             else
             {
-                Debug.Log($"Failed to load video_source.yml from StreamingAssets: {www.error}");
+                Debug.LogError($"Failed to load video_source.yml from StreamingAssets: {www.error}");
+                if (File.Exists(targetPath))
+                {
+                    Debug.LogWarning("Falling back to the legacy persistent video source configuration.");
+                    LoadConfiguration(targetPath);
+                }
             }
         }
     }
@@ -345,10 +383,10 @@ public class VideoSourceConfigManager : MonoBehaviour
     {
         get
         {
-            // If no current video source is set, default to PICO4U
+            // The maintained receiver path starts in camera-only mode.
             if (_currentVideoSource == null && isInitialized)
             {
-                _currentVideoSource = GetVideoSource("PICO4U");
+                _currentVideoSource = GetVideoSource("CAMERA_ONLY");
             }
 
             return _currentVideoSource;
@@ -369,6 +407,53 @@ public class VideoSourceConfigManager : MonoBehaviour
     public float ContentRatio => CurrentVideoSource?.GetFloatProperty("contentRatio") ?? 0f;
     public float HeightCompressionFactor => CurrentVideoSource?.GetFloatProperty("heightCompressionFactor") ?? 0f;
     public string RawImageRectSize => CurrentVideoSource?.GetStringProperty("RawImageRectSize") ?? string.Empty;
+    public bool UseStereoSideBySide => GetCurrentBoolProperty("UseStereoSideBySide", true);
+    public bool FollowHead => GetCurrentBoolProperty("FollowHead", true);
+    public bool UsePcServiceControl => GetCurrentBoolProperty("UsePcServiceControl", true);
+    public bool ReceiverHeartbeatEnabled => GetCurrentBoolProperty("ReceiverHeartbeatEnabled", false);
+    public string ReceiverHeartbeatHost => GetCurrentStringProperty("ReceiverHeartbeatHost", string.Empty);
+    public int ReceiverHeartbeatPort => GetCurrentIntProperty("ReceiverHeartbeatPort",
+        ReceiverHeartbeatSettings.DefaultDestinationPort);
+    public float ReceiverHeartbeatHz => GetCurrentFloatProperty("ReceiverHeartbeatHz",
+        ReceiverHeartbeatSettings.DefaultPublishHz);
+    public int ReceiverHeartbeatTimeoutMs => GetCurrentIntProperty("ReceiverHeartbeatTimeoutMs",
+        ReceiverHeartbeatSettings.DefaultHeartbeatTimeoutMs);
+    public int ReceiverFrameStaleMs => GetCurrentIntProperty("ReceiverFrameStaleMs",
+        ReceiverHeartbeatSettings.DefaultFrameStaleMs);
+    public bool VisualDependentProfile => GetCurrentBoolProperty("VisualDependentProfile", false);
+    public string VisualProfile => GetCurrentStringProperty("VisualProfile", "camera_flat_v1");
+
+    private bool GetCurrentBoolProperty(string propertyName, bool fallback)
+    {
+        VideoSource source = CurrentVideoSource;
+        return source != null && source.HasProperty(propertyName)
+            ? source.GetPropertyValue<bool>(propertyName)
+            : fallback;
+    }
+
+    private int GetCurrentIntProperty(string propertyName, int fallback)
+    {
+        VideoSource source = CurrentVideoSource;
+        return source != null && source.HasProperty(propertyName)
+            ? source.GetIntProperty(propertyName)
+            : fallback;
+    }
+
+    private float GetCurrentFloatProperty(string propertyName, float fallback)
+    {
+        VideoSource source = CurrentVideoSource;
+        return source != null && source.HasProperty(propertyName)
+            ? source.GetFloatProperty(propertyName)
+            : fallback;
+    }
+
+    private string GetCurrentStringProperty(string propertyName, string fallback)
+    {
+        VideoSource source = CurrentVideoSource;
+        return source != null && source.HasProperty(propertyName)
+            ? source.GetStringProperty(propertyName)
+            : fallback;
+    }
 
     /// <summary>
     /// Get camera parameters from the current video source
