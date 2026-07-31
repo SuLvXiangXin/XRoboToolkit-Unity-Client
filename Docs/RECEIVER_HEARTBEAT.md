@@ -96,23 +96,27 @@ The bundled AAR has no raw socket receive callback. Therefore
 wire-arrival latency. Visual availability fails closed while the decoder-input
 timestamp is unavailable, even if Unity can still display decoded frames.
 
-### Bundled AAR dependency
+### Android receiver dependency
 
-The low-rate observation uses JNI to read the private Java field
-`com.picovr.robotassistantlib.MediaDecoder.lastTimestamp:J`. The audited bundled
-artifact is:
+The low-rate observation uses JNI to read the Java field
+`com.xrobotoolkit.video.PersistentMediaDecoder.lastTimestamp:J`. The maintained,
+reproducibly built artifact is:
 
 ```text
-Assets/Plugins/Android/robotassistant_lib-i18n-release.aar
-SHA-256 19acfdbd409ecfe6ead1b12c00264fd491e926cdc20ca67231be8bc45d5df90a
+Assets/Plugins/Android/xrobot-persistent-media-decoder.aar
+SHA-256 e29532b43b30a939db8307cf500816e34d3072e82a9df2e2f051b5cce68d5a16
 ```
 
-This is an observability-only dependency. A missing or changed field is caught by
-the C# bridge: video decode continues, receive age stays unknown, and
-`visual_profile_available` stays false. Run the repository preflight after any AAR
-upgrade:
+Its source and deterministic build script live in `Tools/android_receiver/`.
+The upstream `robotassistant_lib-i18n-release.aar` remains available for unrelated
+camera/control integrations but no longer owns the direct video receiver.
+
+A missing or changed timestamp field is caught by the C# bridge: video decode
+continues, receive age stays unknown, and `visual_profile_available` stays false.
+Rebuild and run the repository preflight after any Android receiver change:
 
 ```bash
+Tools/android_receiver/build.sh
 python3 Tools/verify_receiver_heartbeat.py
 ```
 
@@ -143,10 +147,16 @@ Every explicit Listen/reconnect creates a new random `session_id` and resets
 releases MediaCodec, and destroys the old texture. UDP socket errors are recovered
 by recreating the socket on the next scheduled publish.
 
-The upstream decoder AAR accepts one video TCP connection per server start and
-does not expose a reliable disconnect callback. Video reconnect is therefore
-explicit: toggle Listen off/on. Camera control uses a managed socket with the
-official four-byte big-endian outer framing, a four-second connect deadline,
+The maintained Android receiver keeps TCP `12345` listening for the complete
+camera-window lifetime. A sender disconnect closes only that client socket and
+returns to `accept()` without rebuilding MediaCodec or the Unity texture. Its
+explicit stop closes both sockets before joining the receiver thread, and the
+listener uses address reuse so reconnect does not depend on TCP timeout expiry.
+
+The sender waits for a complete SPS/PPS/IDR recovery access unit before opening
+the video connection, so a cold ROS or encoder startup cannot occupy the PICO
+socket without sending decodable data. Camera control uses a managed socket with
+the official four-byte big-endian outer framing, a four-second connect deadline,
 per-generation cancellation, and a bounded ordered send queue. Old connect/I/O
 workers cannot update status or deliver callbacks after a retry.
 

@@ -171,6 +171,9 @@ public partial class UICameraCtrl : MonoBehaviour
             yield break;
         }
 
+        VideoSourceConfigManager config = VideoSourceConfigManager.Instance;
+        bool usePcServiceControl = config.UsePcServiceControl;
+
         if (TcpServer.Status == ServerStatus.Started)
         {
             // Close TcpServer first
@@ -180,7 +183,6 @@ public partial class UICameraCtrl : MonoBehaviour
         yield return new WaitForSeconds(0.1f);
 
         // Get camera parameters
-        VideoSourceConfigManager config = VideoSourceConfigManager.Instance;
         var camPara = config.CameraParameters;
         string heartbeatHost = string.IsNullOrWhiteSpace(config.ReceiverHeartbeatHost)
             ? sourceIp
@@ -207,7 +209,7 @@ public partial class UICameraCtrl : MonoBehaviour
         RemoteCameraWindowObj.SetActive(true);
         _remoteCameraWindow = RemoteCameraWindowObj.GetComponent<RemoteCameraWindow>();
         _remoteCameraWindow.StartListen(camPara.width, camPara.height, camPara.fps,
-            camPara.bitrate, streamingPort, config.FollowHead, config.UsePcServiceControl, heartbeatSettings);
+            camPara.bitrate, streamingPort, config.FollowHead, usePcServiceControl, heartbeatSettings);
 
         yield return new WaitForSeconds(0.2f);
 
@@ -224,7 +226,7 @@ public partial class UICameraCtrl : MonoBehaviour
 
         if (TcpManager.Instance == null)
         {
-            FailCameraRequest("Camera control manager is unavailable.");
+            HandleCameraRegistrationFailure(usePcServiceControl, "Camera control manager is unavailable.");
             yield break;
         }
 
@@ -234,7 +236,8 @@ public partial class UICameraCtrl : MonoBehaviour
         }
         catch (Exception exception)
         {
-            FailCameraRequest("Failed to start camera control connection: " + exception.Message);
+            HandleCameraRegistrationFailure(usePcServiceControl,
+                "Failed to start camera control connection: " + exception.Message);
             yield break;
         }
 
@@ -245,14 +248,16 @@ public partial class UICameraCtrl : MonoBehaviour
         }
         if (TcpClient.Status != ClientStatus.Connected)
         {
-            FailCameraRequest("Camera control connection timed out or failed.");
+            HandleCameraRegistrationFailure(usePcServiceControl,
+                "Camera registration connection timed out or failed.");
             yield break;
         }
 
         string localIP = TcpClient.LocalAddress;
         if (string.IsNullOrWhiteSpace(localIP))
         {
-            FailCameraRequest("Camera control socket did not expose a local IPv4 address.");
+            HandleCameraRegistrationFailure(usePcServiceControl,
+                "Camera registration socket did not expose a local IPv4 address.");
             yield break;
         }
 
@@ -273,7 +278,8 @@ public partial class UICameraCtrl : MonoBehaviour
         // Use network commander
         if (NetworkCommander.Instance == null)
         {
-            FailCameraRequest("Camera network commander is unavailable.");
+            HandleCameraRegistrationFailure(usePcServiceControl,
+                "Camera registration command sender is unavailable.");
             yield break;
         }
         try
@@ -282,10 +288,32 @@ public partial class UICameraCtrl : MonoBehaviour
         }
         catch (Exception exception)
         {
-            FailCameraRequest("Failed to send camera open command: " + exception.Message);
+            HandleCameraRegistrationFailure(usePcServiceControl,
+                "Failed to register PICO camera receiver: " + exception.Message);
             yield break;
         }
         _cameraRequestCoroutine = null;
+    }
+
+    private void HandleCameraRegistrationFailure(bool usePcServiceControl, string message)
+    {
+        if (usePcServiceControl)
+        {
+            FailCameraRequest(message);
+            return;
+        }
+
+        // CAMERA_ONLY uses this connection only to tell the gateway where this
+        // PICO is listening. It is not a PC Service dependency. Keep the local
+        // receiver alive when registration fails so a retry does not blank it.
+        Debug.LogWarning(message);
+        LogWindow.Warn(message + " PICO receiver remains listening.");
+        Toast.Show("Camera registration failed; receiver remains listening.");
+        _cameraRequestCoroutine = null;
+        if (TcpClient.Status == ClientStatus.Connected || TcpClient.Status == ClientStatus.Connecting)
+        {
+            if (TcpManager.Instance != null) TcpManager.Instance.StopClient();
+        }
     }
 
     private void FailCameraRequest(string message)

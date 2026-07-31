@@ -5,6 +5,7 @@ using UnityEngine;
 
 public class MediaDecoder
 {
+    private const string JavaClassName = "com.xrobotoolkit.video.PersistentMediaDecoder";
     private static AndroidJavaObject _javaObj = null;
     private static AndroidJavaClass _javaSystemClass;
     private static IntPtr _lastTimestampFieldId = IntPtr.Zero;
@@ -13,7 +14,7 @@ public class MediaDecoder
     {
         if (_javaObj == null)
         {
-            _javaObj = new AndroidJavaObject("com.picovr.robotassistantlib.MediaDecoder");
+            _javaObj = new AndroidJavaObject(JavaClassName);
         }
 
         return _javaObj;

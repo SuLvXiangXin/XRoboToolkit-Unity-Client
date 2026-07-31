@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Verify the private AAR field used by receiver heartbeat observability."""
+"""Verify Android receiver artifacts and heartbeat integration markers."""
 
 from __future__ import annotations
 
@@ -15,6 +15,8 @@ from pathlib import Path
 
 EXPECTED_AAR_SHA256 = "19acfdbd409ecfe6ead1b12c00264fd491e926cdc20ca67231be8bc45d5df90a"
 CLASS_PATH = "com/picovr/robotassistantlib/MediaDecoder.class"
+EXPECTED_PERSISTENT_AAR_SHA256 = "e29532b43b30a939db8307cf500816e34d3072e82a9df2e2f051b5cce68d5a16"
+PERSISTENT_CLASS_PATH = "com/xrobotoolkit/video/PersistentMediaDecoder.class"
 
 
 class ClassReader:
@@ -154,6 +156,34 @@ def main() -> int:
         )
         return 1
 
+    persistent_aar_path = (
+        repo_root / "Assets/Plugins/Android/xrobot-persistent-media-decoder.aar"
+    )
+    if not persistent_aar_path.is_file():
+        print(f"ERROR: missing {persistent_aar_path}", file=sys.stderr)
+        return 1
+    persistent_aar_bytes = persistent_aar_path.read_bytes()
+    persistent_hash = hashlib.sha256(persistent_aar_bytes).hexdigest()
+    if persistent_hash != EXPECTED_PERSISTENT_AAR_SHA256:
+        message = (
+            "persistent receiver AAR SHA-256 changed: expected "
+            f"{EXPECTED_PERSISTENT_AAR_SHA256}, got {persistent_hash}"
+        )
+        if args.strict_artifact:
+            print(f"ERROR: {message}", file=sys.stderr)
+            return 1
+        print(f"WARNING: {message}", file=sys.stderr)
+    with zipfile.ZipFile(io.BytesIO(persistent_aar_bytes)) as aar:
+        persistent_classes_jar = aar.read("classes.jar")
+    with zipfile.ZipFile(io.BytesIO(persistent_classes_jar)) as jar:
+        persistent_class_bytes = jar.read(PERSISTENT_CLASS_PATH)
+    if ("lastTimestamp", "J") not in parse_fields(persistent_class_bytes):
+        print(
+            f"ERROR: {PERSISTENT_CLASS_PATH} does not expose lastTimestamp:J",
+            file=sys.stderr,
+        )
+        return 1
+
     video_config = (repo_root / "Assets/StreamingAssets/video_source.yml").read_text(
         encoding="utf-8-sig"
     )
@@ -210,6 +240,13 @@ def main() -> int:
         return 1
     if "RestartStalledReceiverIfNeeded(now);" not in remote_source:
         print("ERROR: stalled direct receiver is not restarted automatically", file=sys.stderr)
+        return 1
+    media_decoder_source = (repo_root / "Assets/Scripts/MediaDecoder.cs").read_text()
+    if "com.xrobotoolkit.video.PersistentMediaDecoder" not in media_decoder_source:
+        print("ERROR: Unity is not using the persistent Android receiver", file=sys.stderr)
+        return 1
+    if "RestartReceiverBeforeFirstFrame" in remote_source:
+        print("ERROR: unsafe first-frame receiver restart is still enabled", file=sys.stderr)
         return 1
 
     config_manager_source = (
@@ -288,11 +325,13 @@ def main() -> int:
 
     print(f"OK: {CLASS_PATH} contains lastTimestamp:J")
     print(f"OK: AAR SHA-256 {actual_hash}")
+    print(f"OK: persistent receiver AAR SHA-256 {persistent_hash}")
     print("OK: CAMERA_ONLY is direct, flat, observation-only, and uses UDP 13580")
     print("OK: persistent video source config upgrades to bundled v3")
     print("OK: CAMERA_ONLY and the pose PC IP are the camera defaults")
     print("OK: camera control uses managed timeout/generation/bounded framing")
     print("OK: visual-profile availability requires explicit opt-in")
+    print("OK: direct receiver uses the persistent Android listener")
     print("OK: gateway canonical heartbeat fields are present")
     return 0
 
