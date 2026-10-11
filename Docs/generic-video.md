@@ -2,16 +2,28 @@
 
 This extension is based on official commit
 `cdc53166b0bf412efae71046c6a225eb5091605f`. Select **GENERIC** in the camera list
-and click **Open video**. Playback is off on every application launch. If PC
+and click **打开视频** (Open video). Playback is off on every application launch. If PC
 Service is connected (WORKING), video reuses its host
 without another IP dialog. Otherwise the dialog asks for the sender computer's
 IP and remembers it. The picture renders in front of the original menu. Click
-the **×** on the picture's upper-right corner (or **Close video** in the camera
+the **×** on the picture's upper-right corner (or **关闭视频** (Close video) in the camera
 menu) to hide it immediately and disconnect video. The sender stops encoding
 and transmitting to PICO when this connection closes; tracking and the camera's
 existing ROS publication continue independently. Hidden controls behind the picture
 cannot receive pointer clicks. For a sender on another
 computer or a USB connection, use the explicit video settings file below.
+
+Video controls use bundled Chinese labels and a compact dark frame, with hover feedback
+on the title bar, close button and resize grip. The font and its Apache-2.0 license
+are included under `Assets/Resources/GenericVideoChinese*`.
+
+The window follows the head, including after moving it: hold the controller
+trigger on the title bar to drag it within the view. Drag the lower-right corner
+to resize uniformly, preserving image aspect ratio. New installations start at
+1.5 times the original preview size; scale is bounded to 0.75–2 times and movement
+is bounded within the view. Position and scale are saved on release and restored
+on reopening. These controls only change the display transform, not the source
+resolution, encoder or tracking connection.
 The matching Python `video_sender` package from the Sender repository listens on
 TCP 13579. This mode has its own protocol/socket/workers and does not request
 camera/audio forwarding through PC Service.
@@ -71,7 +83,7 @@ external files directory, then atomically rename it to `generic_video.json`:
 ```
 
 Path: `/sdcard/Android/data/com.xrobotoolkit.client.genericvideo/files/generic_video.json`.
-This file only selects the endpoint when **Open video** is clicked. It never
+This file only selects the endpoint when **打开视频** (Open video) is clicked. It never
 starts or stops playback automatically; the former `enabled` field is ignored,
 including in files left by older testing builds. Close and reopen video to apply
 an endpoint change. Delete the file to return to the PC Service host default.

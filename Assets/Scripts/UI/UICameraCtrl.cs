@@ -41,6 +41,7 @@ public partial class UICameraCtrl : MonoBehaviour
     private GenericVideoView genericVideo;
     private Text videoButtonLabel;
     private string originalVideoButtonLabel;
+    private Font originalVideoButtonFont;
 
     private int streamingPort = 12345;
     private RemotePcmAudioPlayer remoteAudioPlayer;
@@ -121,6 +122,7 @@ public partial class UICameraCtrl : MonoBehaviour
         if (videoButtonLabel != null)
         {
             originalVideoButtonLabel = videoButtonLabel.text;
+            originalVideoButtonFont = videoButtonLabel.font;
             videoButtonLabel.resizeTextForBestFit = true;
             videoButtonLabel.resizeTextMinSize = 10;
             videoButtonLabel.resizeTextMaxSize = videoButtonLabel.fontSize;
@@ -138,8 +140,9 @@ public partial class UICameraCtrl : MonoBehaviour
     {
         if (videoButtonLabel == null) return;
         bool generic = cameraDropdown.options.Count > 0 && cameraDropdown.options[cameraDropdown.value].text == "GENERIC";
+        videoButtonLabel.font = generic || genericVideo.Requested ? GenericVideoView.ChineseFont : originalVideoButtonFont;
         videoButtonLabel.text = generic || genericVideo.Requested
-            ? (genericVideo.Requested ? "Close video" : "Open video") : originalVideoButtonLabel;
+            ? (genericVideo.Requested ? "关闭视频" : "打开视频") : originalVideoButtonLabel;
     }
 
     private void OnServerReceived(byte[] data)
