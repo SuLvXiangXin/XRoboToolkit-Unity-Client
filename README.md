@@ -1,5 +1,8 @@
 # XRoboToolkit-Unity-Client Project Documentation
 
+[Generic mono video preview](Docs/generic-video.md): independent video connection,
+negotiated resolution, build/install instructions and tracking regression checks.
+
 ## Project Overview
 `XRoboToolkit-Unity-Client` is a Unity-based software developed for PICO devices to facilitate robot training and remote teleoperation. It works in conjunction with PC-side software to achieve robot training and teleoperation functionalities.
 

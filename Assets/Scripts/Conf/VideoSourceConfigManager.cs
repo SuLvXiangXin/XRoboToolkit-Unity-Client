@@ -53,6 +53,8 @@ public class VideoSourceConfigManager : MonoBehaviour
             }
         }
 
+        // Additive runtime profile also works with existing persistent YAML files.
+        videoSources["GENERIC"] = new VideoSource("GENERIC", "GENERIC", "Independent negotiated mono video");
         isInitialized = true;
         Debug.Log($"VideoSourceConfigManager initialized successfully. Loaded {videoSources.Count} video sources.");
         LogWindow.Info($"Loaded {videoSources.Count} video sources.");

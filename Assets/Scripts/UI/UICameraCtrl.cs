@@ -38,6 +38,9 @@ public partial class UICameraCtrl : MonoBehaviour
 
     public TcpManager tcpManager;
     private string logTag => "UICameraCtrl";
+    private GenericVideoView genericVideo;
+    private Text videoButtonLabel;
+    private string originalVideoButtonLabel;
 
     private int streamingPort = 12345;
     private RemotePcmAudioPlayer remoteAudioPlayer;
@@ -85,6 +88,14 @@ public partial class UICameraCtrl : MonoBehaviour
 
     private void Awake()
     {
+        // Keep playback alive when the operator hides the menu hierarchy.
+        genericVideo = new GameObject("Generic Video Viewer").AddComponent<GenericVideoView>();
+        genericVideo.RequestedChanged += enabled => {
+            listenBtn.SetOn(enabled);
+            int index = cameraDropdown.options.FindIndex(option => option.text == "GENERIC");
+            if (enabled && index >= 0) cameraDropdown.SetValueWithoutNotify(index);
+            RefreshVideoButtonLabel(0);
+        };
         CrashProbe.Breadcrumb("camera_ctrl.awake");
         RecordBtn.OnChange += OnRecordBtn;
         TcpHandler.ReceiveFunctionEvent += OnNetReceive;
@@ -102,6 +113,33 @@ public partial class UICameraCtrl : MonoBehaviour
         operatorControlClient.Error += OnControlClientError;
         EnsureVideoProjectionRenderer();
         EnsureRecordStatusOverlay();
+    }
+
+    private void Start()
+    {
+        videoButtonLabel = listenBtn.GetComponentInChildren<Text>(true);
+        if (videoButtonLabel != null)
+        {
+            originalVideoButtonLabel = videoButtonLabel.text;
+            videoButtonLabel.resizeTextForBestFit = true;
+            videoButtonLabel.resizeTextMinSize = 10;
+            videoButtonLabel.resizeTextMaxSize = videoButtonLabel.fontSize;
+        }
+        if (string.IsNullOrEmpty(RemoteVisionAddressStore.LoadLastVideoSource()))
+        {
+            int index = cameraDropdown.options.FindIndex(option => option.text == "GENERIC");
+            if (index >= 0) cameraDropdown.SetValueWithoutNotify(index);
+        }
+        cameraDropdown.onValueChanged.AddListener(RefreshVideoButtonLabel);
+        RefreshVideoButtonLabel(0);
+    }
+
+    private void RefreshVideoButtonLabel(int unused)
+    {
+        if (videoButtonLabel == null) return;
+        bool generic = cameraDropdown.options.Count > 0 && cameraDropdown.options[cameraDropdown.value].text == "GENERIC";
+        videoButtonLabel.text = generic || genericVideo.Requested
+            ? (genericVideo.Requested ? "Close video" : "Open video") : originalVideoButtonLabel;
     }
 
     private void OnServerReceived(byte[] data)
@@ -702,6 +740,35 @@ public partial class UICameraCtrl : MonoBehaviour
 
     public void OnListenCameraBtn(bool on)
     {
+        if (!on && genericVideo.Requested)
+        {
+            genericVideo.StopVideo();
+            listenBtn.SetOn(false);
+            return;
+        }
+        if (on && cameraDropdown.options != null && cameraDropdown.options.Count > 0 &&
+            cameraDropdown.options[cameraDropdown.value].text == "GENERIC")
+        {
+            // Share only the selected host, never the tracking socket or lifecycle.
+            var pcService = FindObjectOfType<TcpHandler>(true);
+            if (genericVideo.TryGetConfiguredEndpoint(out string configuredHost, out int configuredPort))
+            {
+                genericVideo.Connect(configuredHost, configuredPort);
+            }
+            else if (pcService != null && pcService.State == SocketState.WORKING)
+            {
+                string host = TcpHandler.GetTargetIP;
+                genericVideo.Connect(host);
+                RemoteVisionAddressStore.TrySave("GENERIC", host, out _);
+                LogWindow.Info($"Connecting video to PC Service host {host} on its independent video port.");
+            }
+            else
+            {
+                CameraSendInputDialog.Show(ip => genericVideo.Connect(ip), "GENERIC", () => listenBtn.SetOn(false));
+            }
+            listenBtn.SetOn(true);
+            return;
+        }
         if (on)
         {
             // check if the dropdown is updated
@@ -888,6 +955,8 @@ public partial class UICameraCtrl : MonoBehaviour
 
     private void OnDestroy()
     {
+        cameraDropdown.onValueChanged.RemoveListener(RefreshVideoButtonLabel);
+        if (genericVideo != null) Destroy(genericVideo.gameObject);
         StopCameraRequestCoroutine();
         StopDuplexAudio();
         TcpHandler.ReceiveFunctionEvent -= OnNetReceive;
